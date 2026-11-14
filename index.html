@@ -11,13 +11,14 @@
     --pink:#ff8fb8; --deep:#e6457f; --soft:#ffe3ee; --cream:#fff8fb; --ink:#6b2c47;
   }
   *{box-sizing:border-box}
+  [hidden]{display:none !important}
   body{
     margin:0; min-height:100vh; font-family:'Quicksand',sans-serif; color:var(--ink);
     background:linear-gradient(160deg,#ffd6e7 0%,#ffe9f2 45%,#fff3e8 100%);
     background-attachment:fixed; overflow-x:hidden;
   }
   /* Hebrew uses a font that supports Hebrew letters */
-  html[lang="he"] body, html[lang="he"] button{font-family:'Rubik','Quicksand',sans-serif}
+  html[lang="he"] body, html[lang="he"] button, html[lang="he"] input{font-family:'Rubik','Quicksand',sans-serif}
   html[lang="he"] h1, html[lang="he"] .card h2{font-family:'Rubik',sans-serif; font-weight:600}
   html[lang="he"] .quote{font-style:normal}
 
@@ -55,6 +56,7 @@
     box-shadow:0 6px 16px rgba(230,69,127,.35); cursor:pointer;
   }
   button:active{transform:scale(.96)}
+  button:disabled{opacity:.6; cursor:default}
   #lang{
     position:fixed; top:12px; inset-inline-end:12px; z-index:5; margin:0;
     padding:8px 16px; font-size:.9rem; background:rgba(255,255,255,.9); color:var(--deep);
@@ -62,6 +64,29 @@
   }
   footer{text-align:center; font-size:.9rem; margin-top:8px}
   .note{font-size:.75rem; opacity:.7; text-align:center; margin-top:8px}
+
+  /* ---- name guess poll ---- */
+  .poll-form{display:flex; gap:8px}
+  .poll-form input{
+    flex:1; min-width:0; border:2px solid var(--pink); border-radius:99px; padding:12px 16px;
+    font:600 1rem 'Quicksand',sans-serif; color:var(--ink); background:#fff;
+  }
+  .poll-form input:focus{outline:none; border-color:var(--deep)}
+  .poll-form button{margin:0; padding:12px 20px; white-space:nowrap}
+  .msg{text-align:center; font-size:.95rem; font-weight:600; min-height:1.3em; margin-top:10px}
+  .top3{display:grid; gap:10px; margin-top:14px}
+  .rank{position:relative; background:var(--soft); border-radius:18px; padding:12px 14px; overflow:hidden; display:flex; align-items:center; gap:10px; font-weight:700}
+  .rank .fill{position:absolute; top:0; bottom:0; inset-inline-start:0; background:rgba(255,143,184,.4); transition:width .6s}
+  .rank .medal, .rank .nm, .rank .ct{position:relative}
+  .rank .medal{font-size:1.6rem}
+  .rank .nm{flex:1; font-size:1.15rem; color:var(--deep); overflow-wrap:anywhere}
+  .rank.first .nm{font-size:1.4rem}
+  .rank .ct{font-size:.85rem; white-space:nowrap}
+  .empty{text-align:center; margin:6px 0}
+  .moretitle{text-align:center; font-weight:700; font-size:.85rem; letter-spacing:.06em; margin:18px 0 0; opacity:.8}
+  .more{margin:4px 0 0; padding:0; list-style:none}
+  .more li{display:flex; justify-content:space-between; gap:10px; padding:8px 14px; background:#fff7fa; border-radius:12px; margin-top:6px; font-weight:600}
+  .more li span:first-child{overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -95,6 +120,20 @@
     <p class="note" id="sizeNote"></p>
   </section>
 
+  <section class="card" id="pollCard" hidden>
+    <h2 id="pollTitle"></h2>
+    <form class="poll-form" id="pollForm" autocomplete="off">
+      <input id="guess" type="text" maxlength="20" enterkeyhint="send">
+      <button type="submit" id="send"></button>
+    </form>
+    <div class="msg" id="pollMsg"></div>
+    <div class="top3" id="top3"></div>
+    <p class="moretitle" id="moreTitle" hidden></p>
+    <ul class="more" id="more"></ul>
+    <p class="note" id="pollTotal"></p>
+    <p class="note" id="pollNote"></p>
+  </section>
+
   <section class="card">
     <h2 id="quoteTitle"></h2>
     <div class="quote" id="quote"></div>
@@ -104,6 +143,8 @@
   <footer id="footer"></footer>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 /* ====== EDIT THESE LINES ====== */
 const DUE_DATE = "2027-01-28";   // estimated due date, format YYYY-MM-DD
@@ -111,6 +152,16 @@ const HER_NAME = "Guga";             // her name or nickname (leave "" to hide)
 const FROM_NAME = "Gugu";            // your name or nickname (leave "" to hide)
 const HER_NAME_HE = "גוגה";          // optional: her name in Hebrew letters (leave "" to use the one above)
 const FROM_NAME_HE = "גוגו";         // optional: your name in Hebrew letters (leave "" to use the one above)
+
+/* Name-guess poll: paste your Firebase web app config here.
+   While it still says YOUR_..., the poll stays hidden and the rest of the page works as normal. */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB5AypdFaM0oNDI_HNnrRxZQG8ApWUeLzs",
+  authDomain: "counter-b3ecf.firebaseapp.com",
+  databaseURL: "https://counter-b3ecf-default-rtdb.firebaseio.com",
+  projectId: "counter-b3ecf",
+  appId: "1:197286396343:web:9c24011e9d58a59b086832"
+};
 /* =============================== */
 
 /* ---------- text in both languages ---------- */
@@ -136,6 +187,18 @@ const T = {
     days: d => d + (d === 1 ? " day" : " days"),
     join: (a, b) => a + ", " + b,
     journey: p => p + "% of the journey 🌷",
+    pollTitle: "Guess our baby's name 💭",
+    pollPlaceholder: "Type your guess...",
+    pollSend: "Send 💌",
+    pollInvalid: "Please use 2 to 20 letters.",
+    pollBad: "Let's keep it sweet 💕 Try another name.",
+    pollErr: "Couldn't send, please try again.",
+    pollThanks: n => "Thank you! Your guess: " + n + " 💗",
+    pollEmpty: "Be the first to guess! 🌸",
+    pollMore: "MORE GUESSES",
+    pollCount: n => n + (n === 1 ? " guess" : " guesses"),
+    pollTotal: n => n + (n === 1 ? " guess so far" : " guesses so far"),
+    pollNote: "One guess per device. Guesses are visible to everyone with this link.",
     quotes: [
       "Every day with you is my favorite day, and soon we get to add one more person to love.",
       "You're not just growing a baby, you're growing our whole world.",
@@ -156,13 +219,13 @@ const T = {
   },
   he: {
     title: "הספירה לאחור שלנו",
-    titleWithName: n => n + " והתינוקת 💗",
-    sub: "עד שנפגוש את התינוקת שלנו 💕",
+    titleWithName: n => n + " והתינוק 💗",
+    sub: "עד שנפגוש את התינוק שלנו 💕",
     subDone: "היום הגדול הגיע 💕",
     countTitle: "הזמן עד היום הגדול",
     units: ["ימים","שעות","דקות","שניות"],
-    done: "כל רגע עכשיו... או שהתינוקת כבר כאן! 👶💕",
-    sizeTitle: "התינוקת בגודל של...",
+    done: "כל רגע עכשיו... או שהתינוק כבר כאן! 👶💕",
+    sizeTitle: "התינוק בגודל של...",
     weight: "משקל", length: "אורך",
     cm: "ס״מ", g: "גרם", kg: "ק״ג", lessThan1: "פחות מ-1 גרם",
     note: "הגדלים הם ממוצעים משוערים 🌸",
@@ -175,15 +238,27 @@ const T = {
     days: d => d === 1 ? "יום" : d === 2 ? "יומיים" : d + " ימים",
     join: (a, b) => a + (/^\d/.test(b) ? " ו-" : " ו") + b,
     journey: p => p + "% מהדרך 🌷",
+    pollTitle: "נחשו את שם התינוק 💭",
+    pollPlaceholder: "כתבו כאן את הניחוש...",
+    pollSend: "שליחה 💌",
+    pollInvalid: "נא להשתמש ב-2 עד 20 אותיות.",
+    pollBad: "בואו נשמור על זה מתוק 💕 נסו שם אחר.",
+    pollErr: "לא הצלחנו לשלוח, נסו שוב.",
+    pollThanks: n => "תודה! הניחוש שלך: " + n + " 💗",
+    pollEmpty: "היו הראשונים לנחש! 🌸",
+    pollMore: "עוד ניחושים",
+    pollCount: n => n === 1 ? "ניחוש אחד" : n + " ניחושים",
+    pollTotal: n => n === 1 ? "ניחוש אחד עד עכשיו" : n + " ניחושים עד עכשיו",
+    pollNote: "ניחוש אחד לכל מכשיר. הניחושים גלויים לכל מי שיש לו את הקישור.",
     quotes: [
       "כל יום איתך הוא היום האהוב עליי, ובקרוב יהיה עוד מישהו קטן שנאהב.",
-      "את לא רק מגדלת תינוקת, את מגדלת את כל העולם שלנו.",
+      "את לא רק מגדלת תינוק, את מגדלת את כל העולם שלנו.",
       "אני מתאהב בך קצת יותר בכל בוקר מחדש.",
       "הבית הוא איפה שאת, ועכשיו הוא הולך ונהיה גדול עוד יותר.",
       "תודה שאת האמא המחכה החזקה, הרכה והיפה ביותר.",
       "לקטנטן שלנו כבר יש את האמא הכי טובה בעולם.",
       "את הופכת את הרגיל לקסם.",
-      "אני לא יכול לחכות לראות את החיוך שלך על הפנים של התינוקת שלנו.",
+      "אני לא יכול לחכות לראות את החיוך שלך על הפנים של התינוק שלנו.",
       "מה שלא יבוא, אני שלך ואנחנו יחד בזה.",
       "את היום שלי וכל המחר שלי.",
       "ידיים קטנות, רגליים קטנות, והרבה מאוד אהבה בדרך.",
@@ -215,6 +290,40 @@ const SIZES = [
 const $ = id => document.getElementById(id);
 const due = new Date(DUE_DATE + "T00:00:00");
 const TOTAL_DAYS = 280;
+
+/* ---------- cuss word filter (English + Hebrew) ---------- */
+/* FILTER START */
+// Long, clearly offensive terms: blocked anywhere inside the name
+const BAD_SUB = ["fuck","shit","bitch","cunt","whore","slut","nigg","fagg","asshole","pussy","bastard","hitler",
+  "dildo","blowjob","handjob","motherf","wank","twat","jizz","porn","penis","vagina",
+  "שרמוט","מזדיין","בנזונה","זונה","כוסאמק","כוסעמק"];
+// Short words: blocked only when they are a whole word (so names like Cassandra stay fine)
+const BAD_WORD = new Set(["ass","arse","dick","cock","tit","tits","cum","anal","anus","sex","fag","kike","spic",
+  "chink","coon","hoe","crap","piss","pimp","nazi","rape","boob","boobs","כוס","זין","חרא","הומו","פוץ","מניאק"]);
+const squash = s => s.replace(/(.)\1+/g, "$1");
+const BAD_SUB_C = BAD_SUB.map(squash);
+function isBad(name){
+  const t = String(name).toLowerCase()
+    .replace(/0/g,"o").replace(/[1!|]/g,"i").replace(/3/g,"e")
+    .replace(/[4@]/g,"a").replace(/[5$]/g,"s").replace(/7/g,"t");
+  const raw = t.split(/[^\p{L}]+/u).filter(Boolean);
+  // merge runs of single letters ("a s s" -> "ass") so spaced-out words are caught
+  const tokens = [];
+  let run = "";
+  for (const w of raw){
+    if ([...w].length === 1) { run += w; continue; }
+    if (run) { tokens.push(run); run = ""; }
+    tokens.push(w);
+  }
+  if (run) tokens.push(run);
+  for (const w of tokens){
+    const w2 = w.replace(/(.)\1{2,}/g, "$1$1");
+    if (BAD_WORD.has(w) || BAD_WORD.has(w2)) return true;
+  }
+  const joined = squash(t.replace(/[^\p{L}]/gu, ""));
+  return BAD_SUB_C.some(b => joined.includes(b));
+}
+/* FILTER END */
 
 /* ---------- language handling ---------- */
 let lang = "en";
@@ -255,6 +364,14 @@ function render(){
   $("quoteTitle").textContent = t.quoteTitle;
   $("next").textContent = t.next;
   $("quote").textContent = "“" + t.quotes[qi] + "”";
+
+  $("pollCard").hidden = !db;
+  $("pollTitle").textContent = t.pollTitle;
+  $("guess").placeholder = t.pollPlaceholder;
+  $("send").textContent = t.pollSend;
+  $("pollNote").textContent = t.pollNote;
+  $("moreTitle").textContent = t.pollMore;
+  renderPoll();
   tick();
 }
 
@@ -313,6 +430,87 @@ function showQuote(){
 }
 $("next").onclick = () => { qi = (qi + 1) % T.en.quotes.length; showQuote(); };
 setInterval(() => { qi = (qi + 1) % T.en.quotes.length; showQuote(); }, 12000);
+
+/* ---------- name guess poll (Firebase Realtime Database) ---------- */
+let db = null, guesses = {}, msgKey = "";
+if (typeof firebase !== "undefined" && !/YOUR_/.test(FIREBASE_CONFIG.databaseURL)) {
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    db.ref("guesses").on("value",
+      snap => { guesses = snap.val() || {}; renderPoll(); },
+      () => { msgKey = "pollErr"; renderPoll(); });
+  } catch (e) { db = null; }
+}
+
+const NAME_RE = /^\p{L}[\p{L} '\-]{0,18}\p{L}$/u;
+const cleanName = raw => raw.replace(/[’‘`]/g, "'").replace(/\s+/g, " ").trim();
+const pretty = key => key.split(/([ \-'])/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join("");
+function getMine(){ try { return localStorage.getItem("myGuess"); } catch (e) { return null; } }
+
+function renderPoll(){
+  if (!db) return;
+  const t = T[lang];
+  const mine = getMine();
+  $("pollForm").hidden = !!mine;
+  $("pollMsg").textContent = mine ? t.pollThanks(pretty(mine)) : (msgKey ? t[msgKey] : "");
+
+  const list = Object.entries(guesses)
+    .filter(([k, v]) => typeof v === "number" && v > 0 && !isBad(k))
+    .map(([k, v]) => ({ name: pretty(k), n: v }))
+    .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+
+  const top = $("top3"); top.textContent = "";
+  if (list.length === 0) {
+    const p = document.createElement("p");
+    p.className = "empty"; p.textContent = t.pollEmpty;
+    top.appendChild(p);
+  }
+  const maxN = list.length ? list[0].n : 1;
+  const medals = ["🥇","🥈","🥉"];
+  list.slice(0, 3).forEach((g, i) => {
+    const row = document.createElement("div");
+    row.className = "rank" + (i === 0 ? " first" : "");
+    const fill = document.createElement("div");
+    fill.className = "fill"; fill.style.width = Math.max(8, Math.round(g.n / maxN * 100)) + "%";
+    const medal = document.createElement("span"); medal.className = "medal"; medal.textContent = medals[i];
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = g.name;
+    const ct = document.createElement("span"); ct.className = "ct"; ct.textContent = t.pollCount(g.n);
+    row.append(fill, medal, nm, ct);
+    top.appendChild(row);
+  });
+
+  const more = $("more"); more.textContent = "";
+  const rest = list.slice(3, 8);
+  $("moreTitle").hidden = rest.length === 0;
+  rest.forEach(g => {
+    const li = document.createElement("li");
+    const a = document.createElement("span"); a.textContent = g.name;
+    const b = document.createElement("span"); b.textContent = t.pollCount(g.n);
+    li.append(a, b);
+    more.appendChild(li);
+  });
+
+  const total = list.reduce((s, g) => s + g.n, 0);
+  $("pollTotal").textContent = total ? t.pollTotal(total) : "";
+}
+
+$("pollForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!db) return;
+  const name = cleanName($("guess").value);
+  if (!NAME_RE.test(name)) { msgKey = "pollInvalid"; renderPoll(); return; }
+  if (isBad(name)) { msgKey = "pollBad"; renderPoll(); return; }
+  const key = name.toLowerCase();
+  const btn = $("send"); btn.disabled = true;
+  db.ref("guesses/" + key).transaction(c => (typeof c === "number" ? c : 0) + 1)
+    .then(() => {
+      try { localStorage.setItem("myGuess", key); } catch (err) {}
+      msgKey = ""; $("guess").value = ""; renderPoll();
+    })
+    .catch(() => { msgKey = "pollErr"; renderPoll(); })
+    .then(() => { btn.disabled = false; });
+});
 
 render();
 setInterval(tick, 1000);
